@@ -43,8 +43,27 @@ function saveDB(data) {
   try {
     fs.writeFileSync("./database.json", JSON.stringify(data, null, 2));
     console.log(`✅ Database diupdate! Stok saat ini: ${data.codes.length}`);
+
+    // OTOMATIS BACKUP SETIAP KALI SIMPAN
+    autoBackup();
   } catch (err) {
     console.error("❌ Gagal menulis ke database.json:", err);
+  }
+}
+
+// ================= AUTO BACKUP FUNCTION =================
+async function autoBackup() {
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
+    if (channel) {
+      await channel.send({
+        content: "🔄 **SISTEM AUTO-BACKUP**: Stok berubah, ini data terbaru:",
+        files: ["./database.json"],
+      });
+      console.log("📤 Auto-backup berhasil dikirim ke Discord.");
+    }
+  } catch (err) {
+    console.error("❌ Gagal mengirim auto-backup:", err.message);
   }
 }
 
@@ -63,7 +82,6 @@ async function updateStockPanel(forceNew = false) {
     }
 
     const currentStock = db.codes.length;
-    // Jangan update jika stok sama, kecuali dipaksa (forceNew)
     if (!forceNew && currentStock === lastStock) return;
     lastStock = currentStock;
 
@@ -88,7 +106,7 @@ async function updateStockPanel(forceNew = false) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle("🚀 Stok Live Red Finger")
+      .setTitle("🚀 Stok Live Bola Matamu")
       .setColor(color)
       .addFields(
         { name: "📦 Available", value: `${currentStock} Code`, inline: true },
@@ -100,12 +118,10 @@ async function updateStockPanel(forceNew = false) {
       .setFooter({ text: "Mathew Bot Online • AUTO Live" })
       .setTimestamp();
 
-    // Logika /live: Jika forceNew true, buat pesan baru
     if (forceNew || !panelMessageId) {
       const msg = await channel.send({ embeds: [embed] });
       panelMessageId = msg.id;
     } else {
-      // Logika normal: Coba edit pesan yang sudah ada
       try {
         const msg = await channel.messages.fetch(panelMessageId);
         await msg.edit({ embeds: [embed] });
@@ -141,13 +157,13 @@ const commands = [
     ),
   new SlashCommandBuilder()
     .setName("refresh")
-    .setDescription("Update stok manual pada panel yang ada"),
+    .setDescription("Update stok manual"),
   new SlashCommandBuilder()
     .setName("live")
-    .setDescription("Kirim panel stok baru (Gunakan jika panel lama hilang)"),
+    .setDescription("Kirim panel stok baru"),
   new SlashCommandBuilder()
     .setName("backup")
-    .setDescription("Ambil file database.json terbaru dari server"),
+    .setDescription("Ambil file database.json manual"),
 ].map((cmd) => cmd.toJSON());
 
 // ================= REGISTER COMMANDS =================
@@ -170,14 +186,12 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   const db = loadDB();
 
-  // COMMAND: ADD
   if (interaction.commandName === "add") {
     const input = interaction.options.getString("kode");
     const newCodes = input
       .split(/[\n,]+/)
       .map((c) => c.trim())
       .filter((c) => c.length > 0);
-
     if (newCodes.length === 0)
       return interaction.reply({
         content: "❌ Code tidak valid!",
@@ -185,7 +199,7 @@ client.on("interactionCreate", async (interaction) => {
       });
 
     db.codes.push(...newCodes);
-    saveDB(db);
+    saveDB(db); // Ini akan otomatis memicu autoBackup()
     await interaction.reply({
       content: `✅ Berhasil menambahkan ${newCodes.length} code!`,
       ephemeral: true,
@@ -193,11 +207,9 @@ client.on("interactionCreate", async (interaction) => {
     await updateStockPanel();
   }
 
-  // COMMAND: KIRIM
   if (interaction.commandName === "kirim") {
     const user = interaction.options.getUser("user");
     const jumlah = interaction.options.getInteger("jumlah") || 1;
-
     if (db.codes.length < jumlah)
       return interaction.reply({
         content: "❌ Stok tidak cukup!",
@@ -206,7 +218,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const codes = db.codes.splice(0, jumlah);
     db.totalSent += jumlah;
-    saveDB(db);
+    saveDB(db); // Ini akan otomatis memicu autoBackup()
 
     try {
       await user.send(`🎁 **ELITE CODE DELIVERY**\n\n${codes.join("\n")}`);
@@ -223,7 +235,6 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // COMMAND: REFRESH
   if (interaction.commandName === "refresh") {
     if (
       !interaction.memberPermissions.has(
@@ -242,7 +253,6 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
 
-  // COMMAND: LIVE (PANEL BARU)
   if (interaction.commandName === "live") {
     if (
       !interaction.memberPermissions.has(
@@ -254,14 +264,13 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true,
       });
     }
-    await updateStockPanel(true); // Parameter true untuk mengirim pesan baru
+    await updateStockPanel(true);
     await interaction.reply({
-      content: "🚀 Panel stok baru telah dikirim!",
+      content: "🚀 Panel stok baru dikirim!",
       ephemeral: true,
     });
   }
 
-  // COMMAND: BACKUP
   if (interaction.commandName === "backup") {
     if (
       !interaction.memberPermissions.has(
@@ -273,27 +282,17 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true,
       });
     }
-    try {
-      await interaction.reply({
-        content: "📦 Ini backup database terbaru dari server Railway:",
-        files: ["./database.json"],
-        ephemeral: true,
-      });
-    } catch (err) {
-      console.error("❌ Gagal mengirim backup:", err);
-      await interaction.reply({
-        content: "❌ Gagal mengambil file database!",
-        ephemeral: true,
-      });
-    }
+    await interaction.reply({
+      content: "📦 Manual backup database:",
+      files: ["./database.json"],
+      ephemeral: true,
+    });
   }
 });
 
-// ================= READY =================
 client.once("ready", () => {
   console.log(`🔥 ${client.user.tag} Online!`);
   updateStockPanel();
 });
 
-// ================= LOGIN =================
 client.login(TOKEN);

@@ -12,16 +12,15 @@ const {
 const { REST } = require("@discordjs/rest");
 const fs = require("fs");
 
-// ===== Gunakan Environment Variable (Pastikan sudah ada di file .env) =====
+// ===== Environment Variables =====
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const MAX_STOCK = 100;
 
-// Validasi Token agar bot tidak crash saat dijalankan
 if (!TOKEN) {
-  console.error("❌ ERROR: TOKEN tidak ditemukan di .env!");
+  console.error("❌ ERROR: TOKEN tidak ditemukan!");
   process.exit(1);
 }
 
@@ -41,7 +40,12 @@ function loadDB() {
 }
 
 function saveDB(data) {
-  fs.writeFileSync("./database.json", JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync("./database.json", JSON.stringify(data, null, 2));
+    console.log(`✅ Database diupdate! Stok saat ini: ${data.codes.length}`);
+  } catch (err) {
+    console.error("❌ Gagal menulis ke database.json:", err);
+  }
 }
 
 // ================= AUTO PANEL =================
@@ -54,9 +58,7 @@ async function updateStockPanel() {
     const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
 
     if (!channel) {
-      console.error(
-        "❌ ERROR: Channel tidak ditemukan! Cek CHANNEL_ID di .env",
-      );
+      console.error("❌ ERROR: Channel tidak ditemukan!");
       return;
     }
 
@@ -137,6 +139,9 @@ const commands = [
   new SlashCommandBuilder()
     .setName("refresh")
     .setDescription("Update stok manual"),
+  new SlashCommandBuilder()
+    .setName("backup")
+    .setDescription("Ambil file database.json terbaru dari server Railway"),
 ].map((cmd) => cmd.toJSON());
 
 // ================= REGISTER COMMANDS =================
@@ -227,6 +232,32 @@ client.on("interactionCreate", async (interaction) => {
       ephemeral: true,
     });
   }
+
+  if (interaction.commandName === "backup") {
+    if (
+      !interaction.memberPermissions.has(
+        PermissionsBitField.Flags.Administrator,
+      )
+    ) {
+      return interaction.reply({
+        content: "❌ No Permission!",
+        ephemeral: true,
+      });
+    }
+    try {
+      await interaction.reply({
+        content: "📦 Ini backup database terbaru dari server cloud:",
+        files: ["./database.json"],
+        ephemeral: true,
+      });
+    } catch (err) {
+      console.error("❌ Gagal mengirim backup:", err);
+      await interaction.reply({
+        content: "❌ Gagal mengambil file database!",
+        ephemeral: true,
+      });
+    }
+  }
 });
 
 // ================= READY =================
@@ -236,4 +267,4 @@ client.once("ready", () => {
 });
 
 // ================= LOGIN =================
-client.login(process.env.TOKEN);
+client.login(TOKEN);
